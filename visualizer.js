@@ -1,350 +1,382 @@
-/* ===================================================================
-   visualizer.js — D3.js-based DFA Graph Renderer
-   
-   Renders a DFA as a force-directed state diagram inside an SVG.
-   Features:
-     • Force-directed node layout with drag & zoom
-     • Self-loops, curved bi-directional edges
-     • Merged edge labels (a, b)
-     • Start-state arrow, double-circle accept states
-     • Partition-based colour coding with smooth transitions
-   =================================================================== */
+/* ═══════════════════════════════════════════════════════════════════════
+   NFA → DFA Visualizer — Stylesheet
+   Dark theme · Glassmorphism · Grid / Flexbox Layout · Responsive
+   ═══════════════════════════════════════════════════════════════════════ */
 
-window.DFAApp = window.DFAApp || {};
+/* ─── CSS Custom Properties ──────────────────────────────────────────── */
+:root {
+  --bg-primary:    #0b0e17;
+  --bg-card:       rgba(17, 21, 35, 0.75);
+  --bg-card-hover: rgba(25, 30, 52, 0.85);
+  --glass-border:  rgba(99, 102, 241, 0.18);
+  --glass-shadow:  0 8px 32px rgba(0, 0, 0, 0.45);
 
-class DFAVisualizer {
-    /**
-     * @param {string} svgSelector  — CSS selector like '#originalSvg'
-     */
-    constructor(svgSelector) {
-        this.svgSelector = svgSelector;
-        this.svg         = null;
-        this.gRoot       = null;   // zoom container
-        this.simulation  = null;
-        this.nodeRadius  = 26;
-        this.nodes       = [];
-        this.links       = [];
-        this.currentDFA  = null;
-    }
+  --accent-1: #818cf8;
+  --accent-2: #6366f1;
+  --accent-3: #4f46e5;
+  --accent-glow: rgba(99, 102, 241, 0.35);
 
-    /* ============================================================
-       RENDER  — draw a DFA graph from scratch
-       ============================================================ */
-    render(dfa) {
-        this.clear();
-        this.currentDFA = dfa;
+  --success:  #34d399;
+  --danger:   #f87171;
+  --warning:  #fbbf24;
+  --info:     #60a5fa;
 
-        const container = document.querySelector(this.svgSelector).parentElement;
-        const width     = container.clientWidth  || 600;
-        const height    = container.clientHeight || 400;
+  --text-primary:   #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted:     #64748b;
 
-        /* ---- SVG setup ---- */
-        this.svg = d3.select(this.svgSelector)
-            .attr('width', width)
-            .attr('height', height)
-            .attr('viewBox', `0 0 ${width} ${height}`);
+  --font-sans:  'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono:  'JetBrains Mono', 'Fira Code', monospace;
 
-        // Arrowhead marker (normal)
-        const defs = this.svg.append('defs');
-        defs.append('marker')
-            .attr('id', `arrow-${this.svgSelector.replace('#', '')}`)
-            .attr('viewBox', '0 -5 10 10')
-            .attr('refX', 10).attr('refY', 0)
-            .attr('markerWidth', 7).attr('markerHeight', 7)
-            .attr('orient', 'auto')
-            .append('path')
-            .attr('d', 'M0,-5L10,0L0,5')
-            .attr('fill', 'hsl(225, 15%, 40%)');
-
-        // Start-state marker (colored)
-        defs.append('marker')
-            .attr('id', `arrow-start-${this.svgSelector.replace('#', '')}`)
-            .attr('viewBox', '0 -5 10 10')
-            .attr('refX', 10).attr('refY', 0)
-            .attr('markerWidth', 7).attr('markerHeight', 7)
-            .attr('orient', 'auto')
-            .append('path')
-            .attr('d', 'M0,-5L10,0L0,5')
-            .attr('fill', '#22d3ee');
-
-        // Zoom & pan
-        this.gRoot = this.svg.append('g').attr('class', 'zoom-root');
-        const zoom = d3.zoom()
-            .scaleExtent([0.3, 3])
-            .on('zoom', e => this.gRoot.attr('transform', e.transform));
-        this.svg.call(zoom);
-
-        /* ---- Prepare nodes ---- */
-        const R = this.nodeRadius;
-        const angleStep = (2 * Math.PI) / dfa.states.length;
-        const layoutR   = Math.min(width, height) * 0.32;
-
-        this.nodes = dfa.states.map((id, i) => ({
-            id,
-            isAccept: dfa.acceptStates.includes(id),
-            isStart:  id === dfa.startState,
-            x: width  / 2 + layoutR * Math.cos(angleStep * i - Math.PI / 2),
-            y: height / 2 + layoutR * Math.sin(angleStep * i - Math.PI / 2)
-        }));
-
-        /* ---- Prepare links (merge same src→tgt) ---- */
-        const linkMap = {};
-        for (const state of dfa.states) {
-            for (const sym of dfa.alphabet) {
-                const target = dfa.getTransition(state, sym);
-                if (!target) continue;
-                const key = `${state}→${target}`;
-                if (!linkMap[key]) {
-                    linkMap[key] = { source: state, target: target, labels: [] };
-                }
-                linkMap[key].labels.push(sym);
-            }
-        }
-        this.links = Object.values(linkMap).map(l => ({
-            ...l,
-            label: l.labels.join(', '),
-            isSelfLoop: l.source === l.target,
-            isBidirectional: false
-        }));
-
-        // Mark bidirectional pairs
-        for (const link of this.links) {
-            if (link.isSelfLoop) continue;
-            link.isBidirectional = this.links.some(
-                other => other.source === link.target && other.target === link.source && !other.isSelfLoop
-            );
-        }
-
-        // Node lookup
-        const nodeById = {};
-        this.nodes.forEach(n => { nodeById[n.id] = n; });
-
-        // Resolve link source/target to node objects
-        this.links.forEach(l => {
-            l.sourceNode = nodeById[l.source];
-            l.targetNode = nodeById[l.target];
-        });
-
-        /* ---- Draw layers ---- */
-        const gLinks  = this.gRoot.append('g').attr('class', 'links-layer');
-        const gNodes  = this.gRoot.append('g').attr('class', 'nodes-layer');
-        const gLabels = this.gRoot.append('g').attr('class', 'labels-layer');
-
-        /* -- Start-state arrow -- */
-        const startNode = nodeById[dfa.startState];
-        const startArrow = this.gRoot.append('path')
-            .attr('class', 'start-arrow-path')
-            .attr('marker-end', `url(#arrow-start-${this.svgSelector.replace('#', '')})`);
-
-        /* -- Edges -- */
-        const markerUrl = `url(#arrow-${this.svgSelector.replace('#', '')})`;
-
-        const linkGroups = gLinks.selectAll('g.link-group')
-            .data(this.links)
-            .enter().append('g').attr('class', 'link-group');
-
-        const linkPaths = linkGroups.append('path')
-            .attr('class', 'link-path')
-            .attr('marker-end', d => d.isSelfLoop ? markerUrl : markerUrl);
-
-        /* -- Edge label backgrounds + labels -- */
-        const linkLabelGs = gLabels.selectAll('g.link-label-g')
-            .data(this.links)
-            .enter().append('g').attr('class', 'link-label-g');
-
-        const linkLabelBgs = linkLabelGs.append('rect')
-            .attr('class', 'link-label-bg')
-            .attr('rx', 3).attr('ry', 3);
-
-        const linkLabelTexts = linkLabelGs.append('text')
-            .attr('class', 'link-label')
-            .text(d => d.label);
-
-        /* -- Nodes -- */
-        const nodeGroups = gNodes.selectAll('g.node-group')
-            .data(this.nodes, d => d.id)
-            .enter().append('g').attr('class', 'node-group')
-            .call(d3.drag()
-                .on('start', (e, d) => { if (!e.active) this.simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
-                .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y; })
-                .on('end',   (e, d) => { if (!e.active) this.simulation.alphaTarget(0); d.fx = null; d.fy = null; })
-            );
-
-        // Outer circle
-        nodeGroups.append('circle')
-            .attr('class', 'node-circle')
-            .attr('r', R)
-            .attr('fill', 'hsl(228, 25%, 15%)')
-            .attr('stroke', d => d.isAccept ? '#34d399' : 'hsl(225, 20%, 35%)');
-
-        // Inner circle (accept states only)
-        nodeGroups.filter(d => d.isAccept)
-            .append('circle')
-            .attr('class', 'node-circle-inner')
-            .attr('r', R - 5)
-            .attr('stroke', '#34d399');
-
-        // State label
-        nodeGroups.append('text')
-            .attr('class', 'node-label')
-            .text(d => d.id);
-
-        /* ---- Force simulation ---- */
-        this.simulation = d3.forceSimulation(this.nodes)
-            .force('link', d3.forceLink(this.links.filter(l => !l.isSelfLoop))
-                .id(d => d.id).distance(160).strength(0.4))
-            .force('charge', d3.forceManyBody().strength(-500))
-            .force('center', d3.forceCenter(width / 2, height / 2).strength(0.06))
-            .force('collision', d3.forceCollide(R + 20))
-            .force('x', d3.forceX(width / 2).strength(0.04))
-            .force('y', d3.forceY(height / 2).strength(0.04))
-            .alphaDecay(0.025)
-            .on('tick', tick);
-
-        const self = this;
-
-        function tick() {
-            // --- Edge paths ---
-            linkPaths.attr('d', d => {
-                const s = d.sourceNode;
-                const t = d.targetNode;
-
-                if (d.isSelfLoop) return selfLoopPath(s.x, s.y, R);
-
-                const dx   = t.x - s.x;
-                const dy   = t.y - s.y;
-                const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-
-                const targetR = t.isAccept ? R + 2 : R;
-                const sx = s.x + (dx / dist) * R;
-                const sy = s.y + (dy / dist) * R;
-                const tx = t.x - (dx / dist) * (targetR + 6);
-                const ty = t.y - (dy / dist) * (targetR + 6);
-
-                if (d.isBidirectional) {
-                    const dr = dist * 0.55;
-                    return `M ${sx} ${sy} A ${dr} ${dr} 0 0 1 ${tx} ${ty}`;
-                }
-                return `M ${sx} ${sy} L ${tx} ${ty}`;
-            });
-
-            // --- Edge labels ---
-            linkLabelGs.attr('transform', d => {
-                const s = d.sourceNode;
-                const t = d.targetNode;
-
-                if (d.isSelfLoop) {
-                    return `translate(${s.x}, ${s.y - R - 38})`;
-                }
-
-                let mx = (s.x + t.x) / 2;
-                let my = (s.y + t.y) / 2;
-
-                if (d.isBidirectional) {
-                    const dx = t.x - s.x;
-                    const dy = t.y - s.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-                    const nx = -dy / dist;
-                    const ny =  dx / dist;
-                    mx += nx * 22;
-                    my += ny * 22;
-                } else {
-                    const dx = t.x - s.x;
-                    const dy = t.y - s.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-                    const nx = -dy / dist;
-                    const ny =  dx / dist;
-                    mx += nx * 12;
-                    my += ny * 12;
-                }
-
-                return `translate(${mx}, ${my})`;
-            });
-
-            // Size the label bg rectangles
-            linkLabelTexts.each(function () {
-                const bbox = this.getBBox();
-                d3.select(this.previousSibling)
-                    .attr('x', bbox.x - 4)
-                    .attr('y', bbox.y - 2)
-                    .attr('width', bbox.width + 8)
-                    .attr('height', bbox.height + 4);
-            });
-
-            // --- Nodes ---
-            nodeGroups.attr('transform', d => `translate(${d.x}, ${d.y})`);
-
-            // --- Start arrow ---
-            if (startNode) {
-                const sx = startNode.x - R - 40;
-                const sy = startNode.y;
-                const tx = startNode.x - R - 6;
-                const ty = startNode.y;
-                startArrow.attr('d', `M ${sx} ${sy} L ${tx} ${ty}`);
-            }
-        }
-    }
-
-    /* ============================================================
-       UPDATE PARTITION COLOURS  — colour-code nodes by group
-       ============================================================ */
-    updatePartitionColors(partition) {
-        if (!this.svg) return;
-        const colors = window.DFAApp.PARTITION_COLORS;
-
-        // Build state→colour map
-        const colorMap = {};
-        partition.forEach((group, idx) => {
-            group.forEach(s => { colorMap[s] = colors[idx % colors.length]; });
-        });
-
-        // Update outer circle fill & stroke
-        this.svg.selectAll('.node-circle')
-            .transition().duration(450)
-            .attr('fill', d => {
-                const c = colorMap[d.id];
-                return c ? hexToFill(c, 0.2) : 'hsl(228, 25%, 15%)';
-            })
-            .attr('stroke', d => colorMap[d.id] || (d.isAccept ? '#34d399' : 'hsl(225, 20%, 35%)'));
-
-        // Update inner circle for accept states
-        this.svg.selectAll('.node-circle-inner')
-            .transition().duration(450)
-            .attr('stroke', d => colorMap[d.id] || '#34d399');
-    }
-
-    /* ============================================================
-       CLEAR  — tear down the current visualization
-       ============================================================ */
-    clear() {
-        if (this.simulation) { this.simulation.stop(); this.simulation = null; }
-        d3.select(this.svgSelector).selectAll('*').remove();
-        this.nodes = [];
-        this.links = [];
-        this.currentDFA = null;
-    }
+  --radius:    12px;
+  --radius-sm: 8px;
+  --gap:       1.25rem;
 }
 
-/* ---------- Helpers ---------- */
+/* ─── Reset & Base ───────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/** Generates the SVG path for a self-loop above the node. */
-function selfLoopPath(cx, cy, r) {
-    const topY = cy - r;
-    const loopH = r * 1.6;
-    const loopW = r * 0.9;
-    return `M ${cx - 8} ${topY}
-            C ${cx - loopW - 10} ${topY - loopH},
-              ${cx + loopW + 10} ${topY - loopH},
-              ${cx + 8} ${topY}`;
+html { font-size: 15px; scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 50% -20%, rgba(99,102,241,0.12), transparent),
+    radial-gradient(ellipse 60% 50% at 80% 110%, rgba(139,92,246,0.08), transparent);
 }
 
-/** Converts a hex colour + alpha into an rgba fill string. */
-function hexToFill(hex, alpha) {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+/* ─── Hero Header ────────────────────────────────────────────────────── */
+.hero {
+  text-align: center;
+  padding: 3rem 1.5rem 2rem;
+}
+.hero__badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--accent-1);
+  background: rgba(99,102,241,0.12);
+  border: 1px solid rgba(99,102,241,0.25);
+  border-radius: 100px;
+  padding: 0.3em 1em;
+  margin-bottom: 1rem;
+}
+.hero__title {
+  font-size: clamp(2rem, 5vw, 3.2rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.hero__accent {
+  background: linear-gradient(135deg, var(--accent-1), #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.hero__subtitle {
+  margin-top: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 1rem;
 }
 
-/* Export */
-window.DFAApp.DFAVisualizer = DFAVisualizer;
+/* ─── App Container ──────────────────────────────────────────────────── */
+.app {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+/* ─── Glass Card ─────────────────────────────────────────────────────── */
+.card {
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 1.75rem;
+  box-shadow: var(--glass-shadow);
+  transition: background 0.3s, border-color 0.3s;
+}
+.card:hover {
+  background: var(--bg-card-hover);
+  border-color: rgba(99,102,241,0.3);
+}
+.card__heading {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.card__heading .icon { font-size: 1.25rem; }
+
+/* ─── Form Fields ────────────────────────────────────────────────────── */
+.field { margin-bottom: 1rem; }
+
+.field label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  color: var(--text-secondary);
+}
+.field__hint {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.field__hint code {
+  font-family: var(--font-mono);
+  background: rgba(99,102,241,0.12);
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+  font-size: 0.76rem;
+  color: var(--accent-1);
+}
+
+input[type="text"],
+textarea {
+  width: 100%;
+  background: rgba(15,18,30,0.7);
+  border: 1px solid rgba(99,102,241,0.2);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.85rem;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  transition: border-color 0.25s, box-shadow 0.25s;
+  outline: none;
+}
+input[type="text"]:focus,
+textarea:focus {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+textarea { resize: vertical; }
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+/* ─── Error Box ──────────────────────────────────────────────────────── */
+.error-box {
+  background: rgba(248,113,113,0.1);
+  border: 1px solid rgba(248,113,113,0.35);
+  color: var(--danger);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 1rem;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+  animation: fadeIn 0.3s ease;
+}
+
+/* ─── Buttons ────────────────────────────────────────────────────────── */
+.btn-group {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.btn-group--controls { justify-content: center; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1.2rem;
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.25s, background 0.25s, opacity 0.25s;
+  outline: none;
+}
+.btn:active { transform: scale(0.96); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+.btn--primary {
+  background: linear-gradient(135deg, var(--accent-2), var(--accent-3));
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(99,102,241,0.35);
+}
+.btn--primary:hover:not(:disabled) { box-shadow: 0 6px 20px rgba(99,102,241,0.5); }
+
+.btn--accent {
+  background: linear-gradient(135deg, #34d399, #059669);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(52,211,153,0.3);
+}
+.btn--accent:hover:not(:disabled) { box-shadow: 0 6px 20px rgba(52,211,153,0.45); }
+
+.btn--ghost {
+  background: rgba(99,102,241,0.08);
+  color: var(--accent-1);
+  border: 1px solid rgba(99,102,241,0.25);
+}
+.btn--ghost:hover:not(:disabled) { background: rgba(99,102,241,0.15); }
+
+.btn--outline {
+  background: transparent;
+  color: var(--accent-1);
+  border: 1px solid var(--accent-2);
+}
+.btn--outline:hover:not(:disabled) { background: rgba(99,102,241,0.1); }
+
+.btn--danger {
+  background: rgba(248,113,113,0.12);
+  color: var(--danger);
+  border: 1px solid rgba(248,113,113,0.3);
+}
+.btn--danger:hover:not(:disabled) { background: rgba(248,113,113,0.22); }
+
+/* ─── Step Counter ───────────────────────────────────────────────────── */
+.step-counter {
+  text-align: center;
+  margin-top: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+/* ─── Graph Section (CSS Grid, 2 columns) ────────────────────────────── */
+.graph-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gap);
+}
+
+.graph-container {
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--glass-shadow);
+}
+
+.graph-label {
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-1);
+  padding: 0.65rem 0 0;
+}
+
+.graph-canvas {
+  width: 100%;
+  height: 400px;
+}
+
+/* ─── Explanation Panel ──────────────────────────────────────────────── */
+.explanation-content {
+  font-size: 0.92rem;
+  line-height: 1.75;
+  color: var(--text-secondary);
+}
+.explanation-content strong { color: var(--text-primary); }
+.explanation-content code {
+  font-family: var(--font-mono);
+  background: rgba(99,102,241,0.1);
+  padding: 0.15em 0.45em;
+  border-radius: 4px;
+  font-size: 0.84rem;
+  color: var(--accent-1);
+}
+.explanation-placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.step-highlight {
+  background: rgba(99,102,241,0.07);
+  border-left: 3px solid var(--accent-2);
+  padding: 0.75rem 1rem;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin: 0.75rem 0;
+}
+.step-highlight.complete {
+  border-left-color: var(--success);
+}
+
+/* ─── Transition Table ───────────────────────────────────────────────── */
+.table-wrapper { overflow-x: auto; }
+
+.table-wrapper table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+.table-wrapper th,
+.table-wrapper td {
+  padding: 0.55rem 0.8rem;
+  text-align: center;
+  border: 1px solid rgba(99,102,241,0.15);
+}
+.table-wrapper th {
+  background: rgba(99,102,241,0.12);
+  color: var(--accent-1);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.76rem;
+  position: sticky;
+  top: 0;
+}
+.table-wrapper td { color: var(--text-secondary); }
+.table-wrapper tr:hover td { background: rgba(99,102,241,0.05); }
+
+/* Start state marker */
+.table-wrapper .row-start td:first-child { color: var(--success); font-weight: 700; }
+/* Accept state marker */
+.table-wrapper .row-accept td:first-child::after {
+  content: ' ★';
+  color: var(--warning);
+}
+
+/* ─── Footer ─────────────────────────────────────────────────────────── */
+.footer {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
+/* ─── Animations ─────────────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in          { animation: fadeIn 0.4s ease both; }
+.fade-in-delay-1  { animation: fadeIn 0.4s 0.1s ease both; }
+.fade-in-delay-2  { animation: fadeIn 0.4s 0.2s ease both; }
+
+/* ─── Responsive ─────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .graph-section { grid-template-columns: 1fr; }
+  .field-row     { grid-template-columns: 1fr; }
+  .hero__title   { font-size: 1.8rem; }
+  .card          { padding: 1.25rem; }
+  .graph-canvas  { height: 320px; }
+}
+@media (max-width: 480px) {
+  html { font-size: 14px; }
+  .btn-group { flex-direction: column; }
+  .btn { width: 100%; justify-content: center; }
+}
