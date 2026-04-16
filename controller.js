@@ -1,382 +1,383 @@
-/* ═══════════════════════════════════════════════════════════════════════
-   NFA → DFA Visualizer — Stylesheet
-   Dark theme · Glassmorphism · Grid / Flexbox Layout · Responsive
-   ═══════════════════════════════════════════════════════════════════════ */
+// controller.js - connects the DFAConverter engine with the UI
+// handles input parsing, validation, step controls, and rendering
 
-/* ─── CSS Custom Properties ──────────────────────────────────────────── */
-:root {
-  --bg-primary:    #0b0e17;
-  --bg-card:       rgba(17, 21, 35, 0.75);
-  --bg-card-hover: rgba(25, 30, 52, 0.85);
-  --glass-border:  rgba(99, 102, 241, 0.18);
-  --glass-shadow:  0 8px 32px rgba(0, 0, 0, 0.45);
+(function () {
+  'use strict';
 
-  --accent-1: #818cf8;
-  --accent-2: #6366f1;
-  --accent-3: #4f46e5;
-  --accent-glow: rgba(99, 102, 241, 0.35);
+  // grab all DOM elements
+  const $ = (sel) => document.querySelector(sel);
+  const el = {
+    form:         $('#nfaForm'),
+    states:       $('#inputStates'),
+    alphabet:     $('#inputAlphabet'),
+    transitions:  $('#inputTransitions'),
+    startState:   $('#inputStart'),
+    acceptStates: $('#inputAccept'),
+    errorBox:     $('#errorBox'),
+    btnConvert:   $('#btnConvert'),
+    btnExample:   $('#btnLoadExample'),
+    btnNext:      $('#btnNextStep'),
+    btnAuto:      $('#btnAutoPlay'),
+    btnReset:     $('#btnReset'),
+    controls:     $('#controlPanel'),
+    graphs:       $('#graphSection'),
+    expPanel:     $('#explanationPanel'),
+    stepExp:      $('#step-explanation'),
+    tablePanel:   $('#tablePanel'),
+    tableWrap:    $('#tableWrapper'),
+    stepCount:    $('#stepCounter'),
+    nfaBox:       $('#nfaCanvas'),
+    dfaBox:       $('#dfaCanvas'),
+  };
 
-  --success:  #34d399;
-  --danger:   #f87171;
-  --warning:  #fbbf24;
-  --info:     #60a5fa;
+  // app state
+  let nfa = null;
+  let dfa = null;
+  let steps = [];
+  let currStep = 0;
+  let autoTimer = null;
+  let nfaNet = null;
+  let dfaViz = null;
 
-  --text-primary:   #e2e8f0;
-  --text-secondary: #94a3b8;
-  --text-muted:     #64748b;
+  // ---- input parsing helpers ----
 
-  --font-sans:  'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono:  'JetBrains Mono', 'Fira Code', monospace;
+  // split comma-separated values, trim whitespace
+  function splitCSV(str) {
+    return str.split(',').map(s => s.trim()).filter(s => s.length > 0);
+  }
 
-  --radius:    12px;
-  --radius-sm: 8px;
-  --gap:       1.25rem;
-}
+  // parse transition lines, each line: "source, symbol, dest"
+  function parseTrans(text) {
+    let lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    let res = [];
 
-/* ─── Reset & Base ───────────────────────────────────────────────────── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    for (let i = 0; i < lines.length; i++) {
+      let parts = lines[i].split(',').map(p => p.trim());
+      if (parts.length !== 3 || parts.some(p => p === '')) {
+        throw new Error(`Line ${i + 1} invalid: "${lines[i]}". Use: source, symbol, dest`);
+      }
+      res.push({ from: parts[0], symbol: parts[1], to: parts[2] });
+    }
+    return res;
+  }
 
-html { font-size: 15px; scroll-behavior: smooth; }
+  // ---- build and validate NFA from form inputs ----
 
-body {
-  font-family: var(--font-sans);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  line-height: 1.6;
-  min-height: 100vh;
-  background-image:
-    radial-gradient(ellipse 80% 60% at 50% -20%, rgba(99,102,241,0.12), transparent),
-    radial-gradient(ellipse 60% 50% at 80% 110%, rgba(139,92,246,0.08), transparent);
-}
+  function buildNFA() {
+    let states = splitCSV(el.states.value);
+    let rawAlpha = splitCSV(el.alphabet.value);
+    let start = el.startState.value.trim();
+    let accept = splitCSV(el.acceptStates.value);
 
-/* ─── Hero Header ────────────────────────────────────────────────────── */
-.hero {
-  text-align: center;
-  padding: 3rem 1.5rem 2rem;
-}
-.hero__badge {
-  display: inline-block;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.15em;
-  color: var(--accent-1);
-  background: rgba(99,102,241,0.12);
-  border: 1px solid rgba(99,102,241,0.25);
-  border-radius: 100px;
-  padding: 0.3em 1em;
-  margin-bottom: 1rem;
-}
-.hero__title {
-  font-size: clamp(2rem, 5vw, 3.2rem);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-}
-.hero__accent {
-  background: linear-gradient(135deg, var(--accent-1), #a78bfa);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.hero__subtitle {
-  margin-top: 0.5rem;
-  color: var(--text-secondary);
-  font-size: 1rem;
-}
+    // filter out eps from alphabet
+    let alpha = rawAlpha.filter(a => a !== 'eps');
 
-/* ─── App Container ──────────────────────────────────────────────────── */
-.app {
-  max-width: 1320px;
-  margin: 0 auto;
-  padding: 0 1.5rem 3rem;
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap);
-}
+    if (states.length === 0) throw new Error('States cannot be empty.');
+    if (alpha.length === 0) throw new Error('Alphabet cannot be empty (don\'t include "eps").');
+    if (!start) throw new Error('Start state is required.');
+    if (!states.includes(start)) throw new Error(`Start state "${start}" not in states.`);
+    for (let a of accept) {
+      if (!states.includes(a)) throw new Error(`Accept state "${a}" not in states.`);
+    }
 
-/* ─── Glass Card ─────────────────────────────────────────────────────── */
-.card {
-  background: var(--bg-card);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  padding: 1.75rem;
-  box-shadow: var(--glass-shadow);
-  transition: background 0.3s, border-color 0.3s;
-}
-.card:hover {
-  background: var(--bg-card-hover);
-  border-color: rgba(99,102,241,0.3);
-}
-.card__heading {
-  font-size: 1.1rem;
-  font-weight: 700;
-  margin-bottom: 1.25rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.card__heading .icon { font-size: 1.25rem; }
+    // build transition map
+    let rawTrans = parseTrans(el.transitions.value);
+    let trans = {};
+    for (let s of states) trans[s] = {};
 
-/* ─── Form Fields ────────────────────────────────────────────────────── */
-.field { margin-bottom: 1rem; }
+    for (let t of rawTrans) {
+      if (!states.includes(t.from)) throw new Error(`Unknown source state "${t.from}".`);
+      if (!states.includes(t.to)) throw new Error(`Unknown dest state "${t.to}".`);
+      if (t.symbol !== 'eps' && !alpha.includes(t.symbol))
+        throw new Error(`Unknown symbol "${t.symbol}".`);
 
-.field label {
-  display: block;
-  font-size: 0.85rem;
-  font-weight: 600;
-  margin-bottom: 0.35rem;
-  color: var(--text-secondary);
-}
-.field__hint {
-  font-weight: 400;
-  color: var(--text-muted);
-  font-size: 0.78rem;
-}
-.field__hint code {
-  font-family: var(--font-mono);
-  background: rgba(99,102,241,0.12);
-  padding: 0.1em 0.4em;
-  border-radius: 4px;
-  font-size: 0.76rem;
-  color: var(--accent-1);
-}
+      if (!trans[t.from][t.symbol]) trans[t.from][t.symbol] = [];
+      if (!trans[t.from][t.symbol].includes(t.to)) {
+        trans[t.from][t.symbol].push(t.to);
+      }
+    }
+    // console.log("parsed NFA:", { states, alpha, trans, start, accept });
 
-input[type="text"],
-textarea {
-  width: 100%;
-  background: rgba(15,18,30,0.7);
-  border: 1px solid rgba(99,102,241,0.2);
-  border-radius: var(--radius-sm);
-  padding: 0.65rem 0.85rem;
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 0.88rem;
-  transition: border-color 0.25s, box-shadow 0.25s;
-  outline: none;
-}
-input[type="text"]:focus,
-textarea:focus {
-  border-color: var(--accent-2);
-  box-shadow: 0 0 0 3px var(--accent-glow);
-}
-textarea { resize: vertical; }
+    return { states, alphabet: alpha, transitions: trans, start, accept };
+  }
 
-.field-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-}
+  // ---- error display ----
 
-/* ─── Error Box ──────────────────────────────────────────────────────── */
-.error-box {
-  background: rgba(248,113,113,0.1);
-  border: 1px solid rgba(248,113,113,0.35);
-  color: var(--danger);
-  border-radius: var(--radius-sm);
-  padding: 0.7rem 1rem;
-  font-size: 0.85rem;
-  margin-bottom: 1rem;
-  animation: fadeIn 0.3s ease;
-}
+  function showErr(msg) { el.errorBox.textContent = msg; el.errorBox.hidden = false; }
+  function hideErr() { el.errorBox.hidden = true; el.errorBox.textContent = ''; }
 
-/* ─── Buttons ────────────────────────────────────────────────────────── */
-.btn-group {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-.btn-group--controls { justify-content: center; }
+  // ---- render the DFA transition table ----
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.6rem 1.2rem;
-  font-family: var(--font-sans);
-  font-size: 0.88rem;
-  font-weight: 600;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.25s, background 0.25s, opacity 0.25s;
-  outline: none;
-}
-.btn:active { transform: scale(0.96); }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+  function renderTable() {
+    if (!dfa) return;
 
-.btn--primary {
-  background: linear-gradient(135deg, var(--accent-2), var(--accent-3));
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(99,102,241,0.35);
-}
-.btn--primary:hover:not(:disabled) { box-shadow: 0 6px 20px rgba(99,102,241,0.5); }
+    let { alphabet, states: dfaStates, transitions: dfaTr, start, accept, stateMap } = dfa;
 
-.btn--accent {
-  background: linear-gradient(135deg, #34d399, #059669);
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(52,211,153,0.3);
-}
-.btn--accent:hover:not(:disabled) { box-shadow: 0 6px 20px rgba(52,211,153,0.45); }
+    let html = '<table id="dfaTransitionTable"><thead><tr><th>DFA State</th>';
+    for (let sym of alphabet) html += `<th>δ(·, ${sym})</th>`;
+    html += '</tr></thead><tbody>';
 
-.btn--ghost {
-  background: rgba(99,102,241,0.08);
-  color: var(--accent-1);
-  border: 1px solid rgba(99,102,241,0.25);
-}
-.btn--ghost:hover:not(:disabled) { background: rgba(99,102,241,0.15); }
+    for (let state of dfaStates) {
+      let isSt = (state === start);
+      let isAcc = accept.includes(state);
+      let cls = '';
+      if (isSt) cls += ' row-start';
+      if (isAcc) cls += ' row-accept';
 
-.btn--outline {
-  background: transparent;
-  color: var(--accent-1);
-  border: 1px solid var(--accent-2);
-}
-.btn--outline:hover:not(:disabled) { background: rgba(99,102,241,0.1); }
+      let nfaInfo = stateMap[state] ? stateMap[state].nfaStates.join(',') : '';
+      html += `<tr class="${cls.trim()}">`;
+      html += `<td title="NFA subset: {${nfaInfo}}">${isSt ? '→ ' : ''}${state}</td>`;
 
-.btn--danger {
-  background: rgba(248,113,113,0.12);
-  color: var(--danger);
-  border: 1px solid rgba(248,113,113,0.3);
-}
-.btn--danger:hover:not(:disabled) { background: rgba(248,113,113,0.22); }
+      for (let sym of alphabet) {
+        let target = (dfaTr[state] && dfaTr[state][sym]) ? dfaTr[state][sym] : '—';
+        html += `<td>${target}</td>`;
+      }
+      html += '</tr>';
+    }
 
-/* ─── Step Counter ───────────────────────────────────────────────────── */
-.step-counter {
-  text-align: center;
-  margin-top: 0.75rem;
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  color: var(--text-muted);
-}
+    html += '</tbody></table>';
+    el.tableWrap.innerHTML = html;
+  }
 
-/* ─── Graph Section (CSS Grid, 2 columns) ────────────────────────────── */
-.graph-section {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--gap);
-}
+  // ---- render step explanation text ----
 
-.graph-container {
-  background: var(--bg-card);
-  backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  box-shadow: var(--glass-shadow);
-}
+  function renderExp(step) {
+    let html = '';
 
-.graph-label {
-  text-align: center;
-  font-size: 0.85rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--accent-1);
-  padding: 0.65rem 0 0;
-}
+    switch (step.type) {
+      case 'init':
+        html = `
+          <div class="step-highlight fade-in">
+            <strong>Step: Initialization</strong><br/>
+            ${step.detail.message}<br/>
+            ε-closure({${nfa.start}}) = {${step.detail.closure.join(', ')}} → DFA start state = <code>${step.detail.label}</code>
+          </div>
+          <p class="fade-in-delay-1">
+            <strong>What is ε-closure?</strong> The ε-closure of a state is the set of all states 
+            reachable from it by following zero or more ε-transitions (including itself).
+            This is always the first step: we find every state the NFA could be in <em>before</em> 
+            reading any input.
+          </p>`;
+        break;
 
-.graph-canvas {
-  width: 100%;
-  height: 400px;
-}
+      case 'process':
+        html = `
+          <div class="step-highlight fade-in">
+            <strong>Step: Processing State</strong><br/>
+            ${step.detail.message}
+          </div>
+          <p class="fade-in-delay-1">
+            For each symbol in Σ = {${nfa.alphabet.join(', ')}}, we compute 
+            <code>move(T, a)</code> then <code>ε-closure</code> of the result 
+            to determine the target DFA state.
+          </p>`;
+        break;
 
-/* ─── Explanation Panel ──────────────────────────────────────────────── */
-.explanation-content {
-  font-size: 0.92rem;
-  line-height: 1.75;
-  color: var(--text-secondary);
-}
-.explanation-content strong { color: var(--text-primary); }
-.explanation-content code {
-  font-family: var(--font-mono);
-  background: rgba(99,102,241,0.1);
-  padding: 0.15em 0.45em;
-  border-radius: 4px;
-  font-size: 0.84rem;
-  color: var(--accent-1);
-}
-.explanation-placeholder {
-  color: var(--text-muted);
-  font-style: italic;
-}
+      case 'transition':
+        html = `
+          <div class="step-highlight fade-in">
+            <strong>Step: Computing Transition</strong><br/>
+            ${step.detail.message}
+          </div>`;
+        if (step.detail.isTrap) {
+          html += `
+            <p class="fade-in-delay-1">
+              <strong>Dead/Trap State (∅):</strong> No NFA states are reachable for this symbol.
+              This creates the trap state ∅ which self-loops on every symbol, 
+              ensuring the DFA is <em>total</em> (every state has a transition for every symbol).
+            </p>`;
+        } else if (step.detail.isNew) {
+          html += `
+            <p class="fade-in-delay-1">
+              This is a <strong>new DFA state</strong>. It has been added to the processing queue 
+              and will be expanded in a later step.
+            </p>`;
+        }
+        break;
 
-.step-highlight {
-  background: rgba(99,102,241,0.07);
-  border-left: 3px solid var(--accent-2);
-  padding: 0.75rem 1rem;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  margin: 0.75rem 0;
-}
-.step-highlight.complete {
-  border-left-color: var(--success);
-}
+      case 'complete':
+        html = `
+          <div class="step-highlight complete fade-in">
+            <strong>✅ Conversion Complete!</strong><br/>
+            ${step.detail.message}
+          </div>
+          <p class="fade-in-delay-1">
+            The DFA is fully constructed. Each DFA state is a unique subset of NFA states, 
+            and every state has exactly one transition per symbol. 
+            A DFA state is <em>accepting</em> if its subset contains any NFA accepting state.
+          </p>`;
+        break;
+    }
 
-/* ─── Transition Table ───────────────────────────────────────────────── */
-.table-wrapper { overflow-x: auto; }
+    el.stepExp.innerHTML = html;
+  }
 
-.table-wrapper table {
-  width: 100%;
-  border-collapse: collapse;
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-}
-.table-wrapper th,
-.table-wrapper td {
-  padding: 0.55rem 0.8rem;
-  text-align: center;
-  border: 1px solid rgba(99,102,241,0.15);
-}
-.table-wrapper th {
-  background: rgba(99,102,241,0.12);
-  color: var(--accent-1);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: 0.76rem;
-  position: sticky;
-  top: 0;
-}
-.table-wrapper td { color: var(--text-secondary); }
-.table-wrapper tr:hover td { background: rgba(99,102,241,0.05); }
+  // ---- execute one step ----
 
-/* Start state marker */
-.table-wrapper .row-start td:first-child { color: var(--success); font-weight: 700; }
-/* Accept state marker */
-.table-wrapper .row-accept td:first-child::after {
-  content: ' ★';
-  color: var(--warning);
-}
+  function runStep(idx) {
+    if (idx >= steps.length) return;
+    let step = steps[idx];
 
-/* ─── Footer ─────────────────────────────────────────────────────────── */
-.footer {
-  text-align: center;
-  padding: 2rem 1rem;
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  letter-spacing: 0.02em;
-}
+    // update explanation
+    renderExp(step);
 
-/* ─── Animations ─────────────────────────────────────────────────────── */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.fade-in          { animation: fadeIn 0.4s ease both; }
-.fade-in-delay-1  { animation: fadeIn 0.4s 0.1s ease both; }
-.fade-in-delay-2  { animation: fadeIn 0.4s 0.2s ease both; }
+    // update dfa graph
+    switch (step.type) {
+      case 'init': {
+        let isAcc = dfa.accept.includes(step.detail.label);
+        dfaViz.addState(step.detail.label, isAcc, true, true);
+        dfaViz.highlightState(step.detail.label);
+        dfaViz.fit();
+        break;
+      }
+      case 'process': {
+        dfaViz.resetHighlights();
+        dfaViz.highlightState(step.detail.state);
+        break;
+      }
+      case 'transition': {
+        let isAcc = dfa.accept.includes(step.detail.to);
+        dfaViz.addState(step.detail.to, isAcc, false, step.detail.isNew);
+        dfaViz.addTransition(step.detail.from, step.detail.symbol, step.detail.to, true);
+        dfaViz.fit();
+        break;
+      }
+      case 'complete': {
+        dfaViz.resetHighlights();
+        dfaViz.fit();
+        renderTable();
+        break;
+      }
+    }
 
-/* ─── Responsive ─────────────────────────────────────────────────────── */
-@media (max-width: 768px) {
-  .graph-section { grid-template-columns: 1fr; }
-  .field-row     { grid-template-columns: 1fr; }
-  .hero__title   { font-size: 1.8rem; }
-  .card          { padding: 1.25rem; }
-  .graph-canvas  { height: 320px; }
-}
-@media (max-width: 480px) {
-  html { font-size: 14px; }
-  .btn-group { flex-direction: column; }
-  .btn { width: 100%; justify-content: center; }
-}
+    // update table progressively
+    if (step.type !== 'complete') renderTable();
+
+    el.stepCount.textContent = `Step ${idx + 1} / ${steps.length}`;
+
+    // disable buttons when done
+    if (idx + 1 >= steps.length) {
+      el.btnNext.disabled = true;
+      el.btnAuto.disabled = true;
+      stopAuto();
+    }
+  }
+
+  // ---- auto play controls ----
+
+  function startAuto() {
+    if (autoTimer) return;
+    el.btnAuto.textContent = '⏸️ Pause';
+    el.btnAuto.classList.replace('btn--outline', 'btn--primary');
+
+    autoTimer = setInterval(() => {
+      if (currStep >= steps.length) { stopAuto(); return; }
+      runStep(currStep);
+      currStep++;
+    }, 1200);
+  }
+
+  function stopAuto() {
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+    el.btnAuto.textContent = '▶️ Auto Play';
+    el.btnAuto.classList.replace('btn--primary', 'btn--outline');
+  }
+
+  // ---- main convert handler ----
+
+  function handleConvert() {
+    hideErr();
+
+    try {
+      nfa = buildNFA();
+    } catch (err) {
+      showErr(err.message);
+      return;
+    }
+
+    // run the engine
+    let converter = new DFAConverter(nfa);
+    let result = converter.convert();
+    dfa = result.dfa;
+    steps = result.steps;
+    currStep = 0;
+
+    // show ui panels
+    el.controls.hidden = false;
+    el.graphs.hidden = false;
+    el.expPanel.hidden = false;
+    el.tablePanel.hidden = false;
+    el.controls.classList.add('fade-in');
+    el.graphs.classList.add('fade-in');
+    el.expPanel.classList.add('fade-in-delay-1');
+    el.tablePanel.classList.add('fade-in-delay-2');
+
+    // reset controls
+    el.btnNext.disabled = false;
+    el.btnAuto.disabled = false;
+    stopAuto();
+
+    el.stepExp.innerHTML =
+      '<p class="explanation-placeholder">Click <strong>Next Step</strong> to begin the subset construction walkthrough.</p>';
+    el.tableWrap.innerHTML =
+      '<table id="dfaTransitionTable"><thead><tr><th>DFA State</th></tr></thead><tbody></tbody></table>';
+    el.stepCount.textContent = `Step 0 / ${steps.length}`;
+
+    // draw NFA graph
+    if (nfaNet) nfaNet.destroy();
+    nfaNet = renderNFA(nfa, el.nfaBox);
+
+    // init DFA visualizer
+    if (dfaViz) dfaViz.destroy();
+    dfaViz = new DFAVisualizer(el.dfaBox, dfa.alphabet);
+
+    el.graphs.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // ---- reset handler ----
+
+  function handleReset() {
+    stopAuto();
+    nfa = null; dfa = null; steps = []; currStep = 0;
+
+    if (nfaNet) { nfaNet.destroy(); nfaNet = null; }
+    if (dfaViz) { dfaViz.destroy(); dfaViz = null; }
+
+    el.controls.hidden = true;
+    el.graphs.hidden = true;
+    el.expPanel.hidden = true;
+    el.tablePanel.hidden = true;
+    hideErr();
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // ---- load example handler ----
+
+  function loadExample() {
+    let sample = getSampleNFA();
+    el.states.value = sample._raw.states;
+    el.alphabet.value = sample._raw.alphabet;
+    el.transitions.value = sample._raw.transitions;
+    el.startState.value = sample._raw.start;
+    el.acceptStates.value = sample._raw.accept;
+    hideErr();
+  }
+
+  // ---- bind events ----
+
+  el.form.addEventListener('submit', (e) => { e.preventDefault(); handleConvert(); });
+  el.btnExample.addEventListener('click', loadExample);
+
+  el.btnNext.addEventListener('click', () => {
+    // console.log("next step clicked, currStep:", currStep);
+    if (currStep < steps.length) { runStep(currStep); currStep++; }
+  });
+
+  el.btnAuto.addEventListener('click', () => {
+    autoTimer ? stopAuto() : startAuto();
+  });
+
+  el.btnReset.addEventListener('click', handleReset);
+
+})();
