@@ -1,382 +1,132 @@
-/* ═══════════════════════════════════════════════════════════════════════
-   NFA → DFA Visualizer — Stylesheet
-   Dark theme · Glassmorphism · Grid / Flexbox Layout · Responsive
-   ═══════════════════════════════════════════════════════════════════════ */
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NFA to DFA Converter — Subset Construction Visualizer</title>
+  <meta name="description" content="Interactive NFA to DFA conversion using the Subset Construction method with step-by-step visualization, transition tables, and educational explanations." />
 
-/* ─── CSS Custom Properties ──────────────────────────────────────────── */
-:root {
-  --bg-primary:    #0b0e17;
-  --bg-card:       rgba(17, 21, 35, 0.75);
-  --bg-card-hover: rgba(25, 30, 52, 0.85);
-  --glass-border:  rgba(99, 102, 241, 0.18);
-  --glass-shadow:  0 8px 32px rgba(0, 0, 0, 0.45);
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
-  --accent-1: #818cf8;
-  --accent-2: #6366f1;
-  --accent-3: #4f46e5;
-  --accent-glow: rgba(99, 102, 241, 0.35);
+  <!-- vis-network CDN -->
+  <script src="https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js"></script>
 
-  --success:  #34d399;
-  --danger:   #f87171;
-  --warning:  #fbbf24;
-  --info:     #60a5fa;
+  <!-- Project CSS -->
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
 
-  --text-primary:   #e2e8f0;
-  --text-secondary: #94a3b8;
-  --text-muted:     #64748b;
+  <!-- ═══════════════════ HEADER ═══════════════════ -->
+  <header class="hero">
+    <div class="hero__badge">Theory of Automata &amp; Formal Languages</div>
+    <h1 class="hero__title">NFA → DFA <span class="hero__accent">Converter</span></h1>
+    <p class="hero__subtitle">Subset Construction Method — Step-by-Step Visualization</p>
+  </header>
 
-  --font-sans:  'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono:  'JetBrains Mono', 'Fira Code', monospace;
+  <main class="app">
 
-  --radius:    12px;
-  --radius-sm: 8px;
-  --gap:       1.25rem;
-}
+    <!-- ═══════════════════ INPUT PANEL ═══════════════════ -->
+    <section class="card card--input" id="inputPanel">
+      <h2 class="card__heading"><span class="icon">⚙️</span> Define Your NFA</h2>
 
-/* ─── Reset & Base ───────────────────────────────────────────────────── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      <form id="nfaForm" autocomplete="off">
+        <div class="field">
+          <label for="inputStates">States <span class="field__hint">(comma-separated)</span></label>
+          <input type="text" id="inputStates" placeholder="e.g. q0, q1, q2" spellcheck="false" />
+        </div>
 
-html { font-size: 15px; scroll-behavior: smooth; }
+        <div class="field">
+          <label for="inputAlphabet">Alphabet <span class="field__hint">(comma-separated, use <code>eps</code> for ε)</span></label>
+          <input type="text" id="inputAlphabet" placeholder="e.g. a, b" spellcheck="false" />
+        </div>
 
-body {
-  font-family: var(--font-sans);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  line-height: 1.6;
-  min-height: 100vh;
-  background-image:
-    radial-gradient(ellipse 80% 60% at 50% -20%, rgba(99,102,241,0.12), transparent),
-    radial-gradient(ellipse 60% 50% at 80% 110%, rgba(139,92,246,0.08), transparent);
-}
+        <div class="field">
+          <label for="inputTransitions">
+            Transitions
+            <span class="field__hint">(one per line: <code>source, symbol, dest</code> — use <code>eps</code> for ε)</span>
+          </label>
+          <textarea id="inputTransitions" rows="6" placeholder="q0, a, q0&#10;q0, a, q1&#10;q0, eps, q1&#10;q1, b, q2" spellcheck="false"></textarea>
+        </div>
 
-/* ─── Hero Header ────────────────────────────────────────────────────── */
-.hero {
-  text-align: center;
-  padding: 3rem 1.5rem 2rem;
-}
-.hero__badge {
-  display: inline-block;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.15em;
-  color: var(--accent-1);
-  background: rgba(99,102,241,0.12);
-  border: 1px solid rgba(99,102,241,0.25);
-  border-radius: 100px;
-  padding: 0.3em 1em;
-  margin-bottom: 1rem;
-}
-.hero__title {
-  font-size: clamp(2rem, 5vw, 3.2rem);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-}
-.hero__accent {
-  background: linear-gradient(135deg, var(--accent-1), #a78bfa);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.hero__subtitle {
-  margin-top: 0.5rem;
-  color: var(--text-secondary);
-  font-size: 1rem;
-}
+        <div class="field-row">
+          <div class="field">
+            <label for="inputStart">Start State</label>
+            <input type="text" id="inputStart" placeholder="e.g. q0" spellcheck="false" />
+          </div>
+          <div class="field">
+            <label for="inputAccept">Accept / Final States <span class="field__hint">(comma-separated)</span></label>
+            <input type="text" id="inputAccept" placeholder="e.g. q2" spellcheck="false" />
+          </div>
+        </div>
 
-/* ─── App Container ──────────────────────────────────────────────────── */
-.app {
-  max-width: 1320px;
-  margin: 0 auto;
-  padding: 0 1.5rem 3rem;
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap);
-}
+        <div id="errorBox" class="error-box" hidden></div>
 
-/* ─── Glass Card ─────────────────────────────────────────────────────── */
-.card {
-  background: var(--bg-card);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  padding: 1.75rem;
-  box-shadow: var(--glass-shadow);
-  transition: background 0.3s, border-color 0.3s;
-}
-.card:hover {
-  background: var(--bg-card-hover);
-  border-color: rgba(99,102,241,0.3);
-}
-.card__heading {
-  font-size: 1.1rem;
-  font-weight: 700;
-  margin-bottom: 1.25rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.card__heading .icon { font-size: 1.25rem; }
+        <div class="btn-group">
+          <button type="button" id="btnLoadExample" class="btn btn--ghost" title="Load a sample NFA">
+            📂 Load Example
+          </button>
+          <button type="submit" id="btnConvert" class="btn btn--primary" title="Parse NFA and begin conversion">
+            🚀 Convert
+          </button>
+        </div>
+      </form>
+    </section>
 
-/* ─── Form Fields ────────────────────────────────────────────────────── */
-.field { margin-bottom: 1rem; }
+    <!-- ═══════════════════ STEP CONTROLS ═══════════════════ -->
+    <section class="card card--controls" id="controlPanel" hidden>
+      <h2 class="card__heading"><span class="icon">▶️</span> Step Controls</h2>
+      <div class="btn-group btn-group--controls">
+        <button type="button" id="btnNextStep" class="btn btn--accent">⏭️ Next Step</button>
+        <button type="button" id="btnAutoPlay" class="btn btn--outline">▶️ Auto Play</button>
+        <button type="button" id="btnReset" class="btn btn--danger">🔄 Reset</button>
+      </div>
+      <div class="step-counter" id="stepCounter">Step 0 / 0</div>
+    </section>
 
-.field label {
-  display: block;
-  font-size: 0.85rem;
-  font-weight: 600;
-  margin-bottom: 0.35rem;
-  color: var(--text-secondary);
-}
-.field__hint {
-  font-weight: 400;
-  color: var(--text-muted);
-  font-size: 0.78rem;
-}
-.field__hint code {
-  font-family: var(--font-mono);
-  background: rgba(99,102,241,0.12);
-  padding: 0.1em 0.4em;
-  border-radius: 4px;
-  font-size: 0.76rem;
-  color: var(--accent-1);
-}
+    <!-- ═══════════════════ GRAPH CANVASES ═══════════════════ -->
+    <section class="graph-section" id="graphSection" hidden>
+      <div class="graph-container">
+        <h3 class="graph-label">NFA Graph</h3>
+        <div class="graph-canvas" id="nfaCanvas"></div>
+      </div>
+      <div class="graph-container">
+        <h3 class="graph-label">DFA Graph</h3>
+        <div class="graph-canvas" id="dfaCanvas"></div>
+      </div>
+    </section>
 
-input[type="text"],
-textarea {
-  width: 100%;
-  background: rgba(15,18,30,0.7);
-  border: 1px solid rgba(99,102,241,0.2);
-  border-radius: var(--radius-sm);
-  padding: 0.65rem 0.85rem;
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 0.88rem;
-  transition: border-color 0.25s, box-shadow 0.25s;
-  outline: none;
-}
-input[type="text"]:focus,
-textarea:focus {
-  border-color: var(--accent-2);
-  box-shadow: 0 0 0 3px var(--accent-glow);
-}
-textarea { resize: vertical; }
+    <!-- ═══════════════════ STEP-BY-STEP EXPLANATION ═══════════════════ -->
+    <section class="card card--explanation" id="explanationPanel" hidden>
+      <h2 class="card__heading"><span class="icon">📖</span> Step-by-Step Explanation</h2>
+      <div id="step-explanation" class="explanation-content">
+        <p class="explanation-placeholder">Click <strong>Next Step</strong> to begin the subset construction walkthrough.</p>
+      </div>
+    </section>
 
-.field-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-}
+    <!-- ═══════════════════ DFA TRANSITION TABLE ═══════════════════ -->
+    <section class="card card--table" id="tablePanel" hidden>
+      <h2 class="card__heading"><span class="icon">📊</span> DFA Transition Table</h2>
+      <div class="table-wrapper" id="tableWrapper">
+        <table id="dfaTransitionTable">
+          <thead><tr><th>DFA State</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
 
-/* ─── Error Box ──────────────────────────────────────────────────────── */
-.error-box {
-  background: rgba(248,113,113,0.1);
-  border: 1px solid rgba(248,113,113,0.35);
-  color: var(--danger);
-  border-radius: var(--radius-sm);
-  padding: 0.7rem 1rem;
-  font-size: 0.85rem;
-  margin-bottom: 1rem;
-  animation: fadeIn 0.3s ease;
-}
+  </main>
 
-/* ─── Buttons ────────────────────────────────────────────────────────── */
-.btn-group {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-.btn-group--controls { justify-content: center; }
+  <!-- ═══════════════════ FOOTER ═══════════════════ -->
+  <footer class="footer">
+    <p>NFA → DFA Subset Construction Visualizer &bull; Made by Madhur(2024UCA3056) &bull; TAFL</p>
+  </footer>
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.6rem 1.2rem;
-  font-family: var(--font-sans);
-  font-size: 0.88rem;
-  font-weight: 600;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.25s, background 0.25s, opacity 0.25s;
-  outline: none;
-}
-.btn:active { transform: scale(0.96); }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
-
-.btn--primary {
-  background: linear-gradient(135deg, var(--accent-2), var(--accent-3));
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(99,102,241,0.35);
-}
-.btn--primary:hover:not(:disabled) { box-shadow: 0 6px 20px rgba(99,102,241,0.5); }
-
-.btn--accent {
-  background: linear-gradient(135deg, #34d399, #059669);
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(52,211,153,0.3);
-}
-.btn--accent:hover:not(:disabled) { box-shadow: 0 6px 20px rgba(52,211,153,0.45); }
-
-.btn--ghost {
-  background: rgba(99,102,241,0.08);
-  color: var(--accent-1);
-  border: 1px solid rgba(99,102,241,0.25);
-}
-.btn--ghost:hover:not(:disabled) { background: rgba(99,102,241,0.15); }
-
-.btn--outline {
-  background: transparent;
-  color: var(--accent-1);
-  border: 1px solid var(--accent-2);
-}
-.btn--outline:hover:not(:disabled) { background: rgba(99,102,241,0.1); }
-
-.btn--danger {
-  background: rgba(248,113,113,0.12);
-  color: var(--danger);
-  border: 1px solid rgba(248,113,113,0.3);
-}
-.btn--danger:hover:not(:disabled) { background: rgba(248,113,113,0.22); }
-
-/* ─── Step Counter ───────────────────────────────────────────────────── */
-.step-counter {
-  text-align: center;
-  margin-top: 0.75rem;
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  color: var(--text-muted);
-}
-
-/* ─── Graph Section (CSS Grid, 2 columns) ────────────────────────────── */
-.graph-section {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--gap);
-}
-
-.graph-container {
-  background: var(--bg-card);
-  backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  box-shadow: var(--glass-shadow);
-}
-
-.graph-label {
-  text-align: center;
-  font-size: 0.85rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--accent-1);
-  padding: 0.65rem 0 0;
-}
-
-.graph-canvas {
-  width: 100%;
-  height: 400px;
-}
-
-/* ─── Explanation Panel ──────────────────────────────────────────────── */
-.explanation-content {
-  font-size: 0.92rem;
-  line-height: 1.75;
-  color: var(--text-secondary);
-}
-.explanation-content strong { color: var(--text-primary); }
-.explanation-content code {
-  font-family: var(--font-mono);
-  background: rgba(99,102,241,0.1);
-  padding: 0.15em 0.45em;
-  border-radius: 4px;
-  font-size: 0.84rem;
-  color: var(--accent-1);
-}
-.explanation-placeholder {
-  color: var(--text-muted);
-  font-style: italic;
-}
-
-.step-highlight {
-  background: rgba(99,102,241,0.07);
-  border-left: 3px solid var(--accent-2);
-  padding: 0.75rem 1rem;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  margin: 0.75rem 0;
-}
-.step-highlight.complete {
-  border-left-color: var(--success);
-}
-
-/* ─── Transition Table ───────────────────────────────────────────────── */
-.table-wrapper { overflow-x: auto; }
-
-.table-wrapper table {
-  width: 100%;
-  border-collapse: collapse;
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-}
-.table-wrapper th,
-.table-wrapper td {
-  padding: 0.55rem 0.8rem;
-  text-align: center;
-  border: 1px solid rgba(99,102,241,0.15);
-}
-.table-wrapper th {
-  background: rgba(99,102,241,0.12);
-  color: var(--accent-1);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: 0.76rem;
-  position: sticky;
-  top: 0;
-}
-.table-wrapper td { color: var(--text-secondary); }
-.table-wrapper tr:hover td { background: rgba(99,102,241,0.05); }
-
-/* Start state marker */
-.table-wrapper .row-start td:first-child { color: var(--success); font-weight: 700; }
-/* Accept state marker */
-.table-wrapper .row-accept td:first-child::after {
-  content: ' ★';
-  color: var(--warning);
-}
-
-/* ─── Footer ─────────────────────────────────────────────────────────── */
-.footer {
-  text-align: center;
-  padding: 2rem 1rem;
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  letter-spacing: 0.02em;
-}
-
-/* ─── Animations ─────────────────────────────────────────────────────── */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.fade-in          { animation: fadeIn 0.4s ease both; }
-.fade-in-delay-1  { animation: fadeIn 0.4s 0.1s ease both; }
-.fade-in-delay-2  { animation: fadeIn 0.4s 0.2s ease both; }
-
-/* ─── Responsive ─────────────────────────────────────────────────────── */
-@media (max-width: 768px) {
-  .graph-section { grid-template-columns: 1fr; }
-  .field-row     { grid-template-columns: 1fr; }
-  .hero__title   { font-size: 1.8rem; }
-  .card          { padding: 1.25rem; }
-  .graph-canvas  { height: 320px; }
-}
-@media (max-width: 480px) {
-  html { font-size: 14px; }
-  .btn-group { flex-direction: column; }
-  .btn { width: 100%; justify-content: center; }
-}
+  <!-- ═══════════════════ SCRIPTS (order matters) ═══════════════════ -->
+  <script src="js/engine.js"></script>
+  <script src="js/visualizer.js"></script>
+  <script src="js/controller.js"></script>
+</body>
+</html>
