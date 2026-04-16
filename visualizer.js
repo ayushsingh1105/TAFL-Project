@@ -1,382 +1,266 @@
-/* ═══════════════════════════════════════════════════════════════════════
-   NFA → DFA Visualizer — Stylesheet
-   Dark theme · Glassmorphism · Grid / Flexbox Layout · Responsive
-   ═══════════════════════════════════════════════════════════════════════ */
+// visualizer.js - vis-network graph rendering for NFA and DFA
 
-/* ─── CSS Custom Properties ──────────────────────────────────────────── */
-:root {
-  --bg-primary:    #0b0e17;
-  --bg-card:       rgba(17, 21, 35, 0.75);
-  --bg-card-hover: rgba(25, 30, 52, 0.85);
-  --glass-border:  rgba(99, 102, 241, 0.18);
-  --glass-shadow:  0 8px 32px rgba(0, 0, 0, 0.45);
+// color scheme for graph nodes and edges
+const COLORS = {
+  node:     { bg: '#1e1b4b', border: '#6366f1', font: '#e2e8f0' },
+  start:    { bg: '#0f766e', border: '#2dd4bf', font: '#f0fdfa' },
+  accept:   { border: '#a78bfa' },
+  active:   { bg: '#fbbf24', border: '#f59e0b', font: '#1e1b4b' },
+  newState: { bg: '#059669', border: '#34d399', font: '#f0fdf4' },
+  trap:     { bg: '#7f1d1d', border: '#f87171', font: '#fca5a5' },
+  edge:     '#6366f1',
+  edgeLbl:  '#c4b5fd',
+  edgeNew:  '#34d399',
+};
 
-  --accent-1: #818cf8;
-  --accent-2: #6366f1;
-  --accent-3: #4f46e5;
-  --accent-glow: rgba(99, 102, 241, 0.35);
-
-  --success:  #34d399;
-  --danger:   #f87171;
-  --warning:  #fbbf24;
-  --info:     #60a5fa;
-
-  --text-primary:   #e2e8f0;
-  --text-secondary: #94a3b8;
-  --text-muted:     #64748b;
-
-  --font-sans:  'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono:  'JetBrains Mono', 'Fira Code', monospace;
-
-  --radius:    12px;
-  --radius-sm: 8px;
-  --gap:       1.25rem;
-}
-
-/* ─── Reset & Base ───────────────────────────────────────────────────── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-html { font-size: 15px; scroll-behavior: smooth; }
-
-body {
-  font-family: var(--font-sans);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  line-height: 1.6;
-  min-height: 100vh;
-  background-image:
-    radial-gradient(ellipse 80% 60% at 50% -20%, rgba(99,102,241,0.12), transparent),
-    radial-gradient(ellipse 60% 50% at 80% 110%, rgba(139,92,246,0.08), transparent);
-}
-
-/* ─── Hero Header ────────────────────────────────────────────────────── */
-.hero {
-  text-align: center;
-  padding: 3rem 1.5rem 2rem;
-}
-.hero__badge {
-  display: inline-block;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.15em;
-  color: var(--accent-1);
-  background: rgba(99,102,241,0.12);
-  border: 1px solid rgba(99,102,241,0.25);
-  border-radius: 100px;
-  padding: 0.3em 1em;
-  margin-bottom: 1rem;
-}
-.hero__title {
-  font-size: clamp(2rem, 5vw, 3.2rem);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-}
-.hero__accent {
-  background: linear-gradient(135deg, var(--accent-1), #a78bfa);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.hero__subtitle {
-  margin-top: 0.5rem;
-  color: var(--text-secondary);
-  font-size: 1rem;
+// shared options for both graphs
+function getGraphOpts() {
+  return {
+    layout: {
+      hierarchical: {
+        enabled: true,
+        direction: 'LR',
+        sortMethod: 'directed',
+        levelSeparation: 180,
+        nodeSpacing: 150,
+        treeSpacing: 140,
+      }
+    },
+    physics: { enabled: false },
+    nodes: {
+      shape: 'circle',
+      size: 30,
+      font: { face: 'JetBrains Mono, monospace', size: 13, color: COLORS.node.font },
+      color: { background: COLORS.node.bg, border: COLORS.node.border },
+      borderWidth: 2,
+      borderWidthSelected: 3,
+    },
+    edges: {
+      color: { color: COLORS.edge },
+      font: {
+        face: 'JetBrains Mono, monospace', size: 12,
+        color: COLORS.edgeLbl, strokeWidth: 3, strokeColor: '#0b0e17', align: 'top',
+      },
+      arrows: { to: { enabled: true, scaleFactor: 0.7 } },
+      smooth: { type: 'curvedCW', roundness: 0.15 },
+      width: 1.8,
+    },
+    interaction: { dragNodes: true, dragView: true, zoomView: true },
+  };
 }
 
-/* ─── App Container ──────────────────────────────────────────────────── */
-.app {
-  max-width: 1320px;
-  margin: 0 auto;
-  padding: 0 1.5rem 3rem;
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap);
+// helper - get curve settings for an edge
+function getSmooth(from, to, hasReverse) {
+  if (from === to) return { type: 'curvedCW', roundness: 0.6 };
+  return { type: 'curvedCW', roundness: hasReverse ? 0.25 : 0.12 };
 }
 
-/* ─── Glass Card ─────────────────────────────────────────────────────── */
-.card {
-  background: var(--bg-card);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  padding: 1.75rem;
-  box-shadow: var(--glass-shadow);
-  transition: background 0.3s, border-color 0.3s;
-}
-.card:hover {
-  background: var(--bg-card-hover);
-  border-color: rgba(99,102,241,0.3);
-}
-.card__heading {
-  font-size: 1.1rem;
-  font-weight: 700;
-  margin-bottom: 1.25rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.card__heading .icon { font-size: 1.25rem; }
+// ===================== NFA GRAPH =====================
 
-/* ─── Form Fields ────────────────────────────────────────────────────── */
-.field { margin-bottom: 1rem; }
+// draw the full NFA graph at once
+function renderNFA(nfa, container) {
+  let nodes = [];
+  let edges = [];
 
-.field label {
-  display: block;
-  font-size: 0.85rem;
-  font-weight: 600;
-  margin-bottom: 0.35rem;
-  color: var(--text-secondary);
-}
-.field__hint {
-  font-weight: 400;
-  color: var(--text-muted);
-  font-size: 0.78rem;
-}
-.field__hint code {
-  font-family: var(--font-mono);
-  background: rgba(99,102,241,0.12);
-  padding: 0.1em 0.4em;
-  border-radius: 4px;
-  font-size: 0.76rem;
-  color: var(--accent-1);
-}
+  // invisible node for start arrow
+  nodes.push({
+    id: '__start__', label: '', shape: 'dot', size: 0,
+    color: { background: 'transparent', border: 'transparent' }, fixed: true
+  });
+  edges.push({
+    from: '__start__', to: nfa.start,
+    color: { color: COLORS.start.border }, width: 2, smooth: false
+  });
 
-input[type="text"],
-textarea {
-  width: 100%;
-  background: rgba(15,18,30,0.7);
-  border: 1px solid rgba(99,102,241,0.2);
-  border-radius: var(--radius-sm);
-  padding: 0.65rem 0.85rem;
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 0.88rem;
-  transition: border-color 0.25s, box-shadow 0.25s;
-  outline: none;
-}
-input[type="text"]:focus,
-textarea:focus {
-  border-color: var(--accent-2);
-  box-shadow: 0 0 0 3px var(--accent-glow);
-}
-textarea { resize: vertical; }
+  // add state nodes
+  for (let st of nfa.states) {
+    let isAcc = nfa.accept.includes(st);
+    let isSt = (st === nfa.start);
+    nodes.push({
+      id: st, label: st,
+      shape: isAcc ? 'doublecircle' : 'circle',
+      borderWidth: isAcc ? 4 : 2,
+      size: isAcc ? 25 : 30,
+      color: {
+        background: isSt ? COLORS.start.bg : COLORS.node.bg,
+        border: isSt ? COLORS.start.border : (isAcc ? COLORS.accept.border : COLORS.node.border),
+      },
+      font: { color: isSt ? COLORS.start.font : COLORS.node.font },
+    });
+  }
 
-.field-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  // group edges by (from,to) to combine labels like "a, b"
+  let edgeMap = new Map();
+  for (let from of nfa.states) {
+    let tr = nfa.transitions[from] || {};
+    for (let [sym, targets] of Object.entries(tr)) {
+      let displaySym = (sym === 'eps') ? 'ε' : sym;
+      for (let to of targets) {
+        let key = from + '→' + to;
+        if (!edgeMap.has(key)) edgeMap.set(key, { from, to, labels: [] });
+        if (!edgeMap.get(key).labels.includes(displaySym)) {
+          edgeMap.get(key).labels.push(displaySym);
+        }
+      }
+    }
+  }
+
+  // create combined edges
+  for (let [, data] of edgeMap) {
+    let rev = edgeMap.has(data.to + '→' + data.from);
+    edges.push({
+      from: data.from, to: data.to,
+      label: data.labels.join(', '),
+      smooth: getSmooth(data.from, data.to, rev),
+    });
+  }
+
+  // console.log("NFA nodes:", nodes.length, "edges:", edges.length);
+
+  return new vis.Network(
+    container,
+    { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) },
+    getGraphOpts()
+  );
 }
 
-/* ─── Error Box ──────────────────────────────────────────────────────── */
-.error-box {
-  background: rgba(248,113,113,0.1);
-  border: 1px solid rgba(248,113,113,0.35);
-  color: var(--danger);
-  border-radius: var(--radius-sm);
-  padding: 0.7rem 1rem;
-  font-size: 0.85rem;
-  margin-bottom: 1rem;
-  animation: fadeIn 0.3s ease;
-}
+// ===================== DFA GRAPH (incremental) =====================
 
-/* ─── Buttons ────────────────────────────────────────────────────────── */
-.btn-group {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-.btn-group--controls { justify-content: center; }
+class DFAVisualizer {
+  constructor(container, alphabet) {
+    this.container = container;
+    this.alpha = alphabet;
+    this.nodesDS = new vis.DataSet();
+    this.edgesDS = new vis.DataSet();
+    this.added = new Set();
+    this.edgeMap = new Map();    // 'from→to' -> edge id for merging
+    this._eid = 0;
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.6rem 1.2rem;
-  font-family: var(--font-sans);
-  font-size: 0.88rem;
-  font-weight: 600;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.25s, background 0.25s, opacity 0.25s;
-  outline: none;
-}
-.btn:active { transform: scale(0.96); }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+    // invisible start pointer
+    this.nodesDS.add({
+      id: '__start__', label: '', shape: 'dot', size: 0,
+      color: { background: 'transparent', border: 'transparent' }, fixed: true
+    });
 
-.btn--primary {
-  background: linear-gradient(135deg, var(--accent-2), var(--accent-3));
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(99,102,241,0.35);
-}
-.btn--primary:hover:not(:disabled) { box-shadow: 0 6px 20px rgba(99,102,241,0.5); }
+    this.network = new vis.Network(
+      container,
+      { nodes: this.nodesDS, edges: this.edgesDS },
+      getGraphOpts()
+    );
+  }
 
-.btn--accent {
-  background: linear-gradient(135deg, #34d399, #059669);
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(52,211,153,0.3);
-}
-.btn--accent:hover:not(:disabled) { box-shadow: 0 6px 20px rgba(52,211,153,0.45); }
+  // reset all highlights back to default
+  resetHighlights() {
+    for (let n of this.nodesDS.get()) {
+      if (n.id === '__start__') continue;
+      let isTrap = n._isTrap;
+      let isAcc = n._isAccept;
+      let isSt = n._isStart;
+      this.nodesDS.update({
+        id: n.id,
+        color: {
+          background: isTrap ? COLORS.trap.bg : (isSt ? COLORS.start.bg : COLORS.node.bg),
+          border: isTrap ? COLORS.trap.border
+            : (isAcc ? COLORS.accept.border : (isSt ? COLORS.start.border : COLORS.node.border)),
+        },
+        font: {
+          color: isTrap ? COLORS.trap.font : (isSt ? COLORS.start.font : COLORS.node.font),
+        },
+      });
+    }
+    for (let e of this.edgesDS.get()) {
+      this.edgesDS.update({ id: e.id, color: { color: COLORS.edge }, width: 1.8 });
+    }
+  }
 
-.btn--ghost {
-  background: rgba(99,102,241,0.08);
-  color: var(--accent-1);
-  border: 1px solid rgba(99,102,241,0.25);
-}
-.btn--ghost:hover:not(:disabled) { background: rgba(99,102,241,0.15); }
+  // add a dfa state node to the graph
+  addState(label, isAccept, isStart, highlight) {
+    if (this.added.has(label)) return;
+    this.added.add(label);
 
-.btn--outline {
-  background: transparent;
-  color: var(--accent-1);
-  border: 1px solid var(--accent-2);
-}
-.btn--outline:hover:not(:disabled) { background: rgba(99,102,241,0.1); }
+    let isTrap = (label === '∅');
 
-.btn--danger {
-  background: rgba(248,113,113,0.12);
-  color: var(--danger);
-  border: 1px solid rgba(248,113,113,0.3);
-}
-.btn--danger:hover:not(:disabled) { background: rgba(248,113,113,0.22); }
+    let bg = highlight
+      ? (isTrap ? COLORS.trap.bg : COLORS.newState.bg)
+      : (isTrap ? COLORS.trap.bg : (isStart ? COLORS.start.bg : COLORS.node.bg));
 
-/* ─── Step Counter ───────────────────────────────────────────────────── */
-.step-counter {
-  text-align: center;
-  margin-top: 0.75rem;
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  color: var(--text-muted);
-}
+    let border = highlight
+      ? (isTrap ? COLORS.trap.border : COLORS.newState.border)
+      : (isTrap ? COLORS.trap.border
+        : (isAccept ? COLORS.accept.border
+          : (isStart ? COLORS.start.border : COLORS.node.border)));
 
-/* ─── Graph Section (CSS Grid, 2 columns) ────────────────────────────── */
-.graph-section {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--gap);
-}
+    let fontClr = highlight
+      ? (isTrap ? COLORS.trap.font : COLORS.newState.font)
+      : (isTrap ? COLORS.trap.font : (isStart ? COLORS.start.font : COLORS.node.font));
 
-.graph-container {
-  background: var(--bg-card);
-  backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  box-shadow: var(--glass-shadow);
-}
+    this.nodesDS.add({
+      id: label, label: label,
+      shape: isAccept ? 'doublecircle' : 'circle',
+      size: isAccept ? 25 : 30,
+      borderWidth: isAccept ? 4 : 2,
+      _isAccept: isAccept, _isTrap: isTrap, _isStart: isStart,
+      color: { background: bg, border: border },
+      font: { color: fontClr },
+    });
 
-.graph-label {
-  text-align: center;
-  font-size: 0.85rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--accent-1);
-  padding: 0.65rem 0 0;
-}
+    // draw start arrow
+    if (isStart) {
+      this.edgesDS.add({
+        id: '__start_edge__', from: '__start__', to: label,
+        color: { color: COLORS.start.border }, width: 2, smooth: false
+      });
+    }
+  }
 
-.graph-canvas {
-  width: 100%;
-  height: 400px;
-}
+  // add edge, merge labels if edge already exists (no overlapping edges)
+  addTransition(from, sym, to, highlight) {
+    let key = from + '→' + to;
 
-/* ─── Explanation Panel ──────────────────────────────────────────────── */
-.explanation-content {
-  font-size: 0.92rem;
-  line-height: 1.75;
-  color: var(--text-secondary);
-}
-.explanation-content strong { color: var(--text-primary); }
-.explanation-content code {
-  font-family: var(--font-mono);
-  background: rgba(99,102,241,0.1);
-  padding: 0.15em 0.45em;
-  border-radius: 4px;
-  font-size: 0.84rem;
-  color: var(--accent-1);
-}
-.explanation-placeholder {
-  color: var(--text-muted);
-  font-style: italic;
-}
+    if (this.edgeMap.has(key)) {
+      // merge into existing edge
+      let eid = this.edgeMap.get(key);
+      let existing = this.edgesDS.get(eid);
+      let labels = existing.label.split(', ');
+      if (!labels.includes(sym)) {
+        labels.push(sym);
+        this.edgesDS.update({
+          id: eid, label: labels.join(', '),
+          color: { color: highlight ? COLORS.edgeNew : COLORS.edge },
+          width: highlight ? 2.8 : 1.8,
+        });
+      }
+    } else {
+      // new edge
+      let eid = 'e_' + (this._eid++);
+      let rev = this.edgeMap.has(to + '→' + from);
+      this.edgesDS.add({
+        id: eid, from, to, label: sym,
+        color: { color: highlight ? COLORS.edgeNew : COLORS.edge },
+        width: highlight ? 2.8 : 1.8,
+        smooth: getSmooth(from, to, rev),
+      });
+      this.edgeMap.set(key, eid);
+    }
+  }
 
-.step-highlight {
-  background: rgba(99,102,241,0.07);
-  border-left: 3px solid var(--accent-2);
-  padding: 0.75rem 1rem;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  margin: 0.75rem 0;
-}
-.step-highlight.complete {
-  border-left-color: var(--success);
-}
+  // highlight one state as active (gold)
+  highlightState(label) {
+    this.resetHighlights();
+    if (!this.added.has(label)) return;
+    this.nodesDS.update({
+      id: label,
+      color: { background: COLORS.active.bg, border: COLORS.active.border },
+      font: { color: COLORS.active.font },
+    });
+  }
 
-/* ─── Transition Table ───────────────────────────────────────────────── */
-.table-wrapper { overflow-x: auto; }
+  // fit view to show everything
+  fit() {
+    this.network.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
+  }
 
-.table-wrapper table {
-  width: 100%;
-  border-collapse: collapse;
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-}
-.table-wrapper th,
-.table-wrapper td {
-  padding: 0.55rem 0.8rem;
-  text-align: center;
-  border: 1px solid rgba(99,102,241,0.15);
-}
-.table-wrapper th {
-  background: rgba(99,102,241,0.12);
-  color: var(--accent-1);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: 0.76rem;
-  position: sticky;
-  top: 0;
-}
-.table-wrapper td { color: var(--text-secondary); }
-.table-wrapper tr:hover td { background: rgba(99,102,241,0.05); }
-
-/* Start state marker */
-.table-wrapper .row-start td:first-child { color: var(--success); font-weight: 700; }
-/* Accept state marker */
-.table-wrapper .row-accept td:first-child::after {
-  content: ' ★';
-  color: var(--warning);
-}
-
-/* ─── Footer ─────────────────────────────────────────────────────────── */
-.footer {
-  text-align: center;
-  padding: 2rem 1rem;
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  letter-spacing: 0.02em;
-}
-
-/* ─── Animations ─────────────────────────────────────────────────────── */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.fade-in          { animation: fadeIn 0.4s ease both; }
-.fade-in-delay-1  { animation: fadeIn 0.4s 0.1s ease both; }
-.fade-in-delay-2  { animation: fadeIn 0.4s 0.2s ease both; }
-
-/* ─── Responsive ─────────────────────────────────────────────────────── */
-@media (max-width: 768px) {
-  .graph-section { grid-template-columns: 1fr; }
-  .field-row     { grid-template-columns: 1fr; }
-  .hero__title   { font-size: 1.8rem; }
-  .card          { padding: 1.25rem; }
-  .graph-canvas  { height: 320px; }
-}
-@media (max-width: 480px) {
-  html { font-size: 14px; }
-  .btn-group { flex-direction: column; }
-  .btn { width: 100%; justify-content: center; }
+  destroy() {
+    if (this.network) this.network.destroy();
+  }
 }
