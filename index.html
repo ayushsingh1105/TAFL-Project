@@ -1,246 +1,246 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DFA Minimization Visualizer — Interactive Learning Tool</title>
-    <meta name="description" content="Visualize and learn DFA minimization step-by-step using partition refinement. Define your own DFA or explore built-in examples with animated state diagrams.">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙️</text></svg>">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/styles.css">
-</head>
-<body>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DFA Minimization Visualizer</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+/* ═══════════════════════════════════════
+   VARIABLES & RESET
+   ═══════════════════════════════════════ */
+:root {
+  --bg: #07070d;
+  --bg2: #0e0e18;
+  --card: rgba(16,16,28,0.72);
+  --card-border: rgba(255,255,255,0.06);
+  --card-hover: rgba(255,255,255,0.04);
+  --input-bg: rgba(255,255,255,0.04);
+  --input-hover: rgba(255,255,255,0.07);
+  --text-1: #f0f0f4;
+  --text-2: #9d9db5;
+  --text-3: #5c5c72;
+  --purple: #8b5cf6;
+  --purple-g: linear-gradient(135deg,#8b5cf6,#6366f1);
+  --blue: #3b82f6;
+  --cyan: #06b6d4;
+  --green: #10b981;
+  --amber: #f59e0b;
+  --pink: #ec4899;
+  --red: #ef4444;
+  --r: 12px;
+  --r2: 16px;
+  --r3: 20px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;font-size:15px}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text-1);overflow-x:hidden;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(139,92,246,0.2);border-radius:9px}
 
-    <!-- ===== HEADER ===== -->
-    <header class="app-header">
-        <div class="header-content">
-            <div class="header-left">
-                <div class="logo">
-                    <svg class="logo-icon" width="36" height="36" viewBox="0 0 36 36" fill="none">
-                        <circle cx="18" cy="18" r="16" stroke="url(#grad1)" stroke-width="2.5"/>
-                        <circle cx="18" cy="18" r="11" stroke="url(#grad1)" stroke-width="1.5" stroke-dasharray="4 3"/>
-                        <circle cx="18" cy="18" r="4" fill="url(#grad1)"/>
-                        <defs><linearGradient id="grad1" x1="0" y1="0" x2="36" y2="36">
-                            <stop offset="0%" stop-color="#818cf8"/><stop offset="100%" stop-color="#22d3ee"/>
-                        </linearGradient></defs>
-                    </svg>
-                    <div>
-                        <h1>DFA Minimization Visualizer</h1>
-                        <p class="tagline">Step-by-step partition refinement</p>
-                    </div>
-                </div>
-            </div>
-            <div class="header-right">
-                <a href="https://en.wikipedia.org/wiki/DFA_minimization" target="_blank" rel="noopener" class="help-link" title="Learn about DFA minimization">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                    Learn More
-                </a>
-            </div>
-        </div>
-    </header>
+/* ═══════════════════════════════════════
+   HERO SECTION
+   ═══════════════════════════════════════ */
+#hero{
+  position:relative;min-height:100vh;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;overflow:hidden;
+}
+#particleCanvas{position:absolute;inset:0;z-index:0}
+.hero-glow{
+  position:absolute;border-radius:50%;filter:blur(120px);opacity:0.35;pointer-events:none;
+}
+.glow1{width:650px;height:650px;background:radial-gradient(circle,rgba(139,92,246,0.55),transparent 70%);top:-15%;left:-10%;animation:gFloat 22s ease-in-out infinite}
+.glow2{width:500px;height:500px;background:radial-gradient(circle,rgba(59,130,246,0.4),transparent 70%);bottom:-10%;right:-10%;animation:gFloat 18s ease-in-out infinite reverse}
+.glow3{width:350px;height:350px;background:radial-gradient(circle,rgba(16,185,129,0.3),transparent 70%);top:40%;left:50%;animation:gFloat 25s ease-in-out infinite 5s}
+@keyframes gFloat{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(35px,-45px) scale(1.08)}66%{transform:translate(-25px,35px) scale(0.92)}}
 
-    <!-- ===== MAIN LAYOUT ===== -->
-    <main class="app-main">
+/* Nav */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:999;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 28px;background:rgba(7,7,13,0.55);
+  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  border-bottom:1px solid rgba(255,255,255,0.04);
+}
+.nav-brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:0.9rem;color:var(--text-1)}
+.nav-brand svg{animation:spin 25s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.nav-links{display:flex;gap:6px}
+.nav-links a{
+  padding:7px 16px;border-radius:8px;text-decoration:none;font-size:0.84rem;font-weight:600;
+  color:var(--text-2);transition:all .2s;
+}
+.nav-links a:hover{color:var(--text-1);background:rgba(255,255,255,0.05)}
+.nav-cta{
+  background:var(--purple-g)!important;color:#fff!important;
+  border-radius:99px!important;padding:8px 20px!important;
+  box-shadow:0 2px 16px rgba(139,92,246,0.25);
+}
+.nav-cta:hover{box-shadow:0 4px 28px rgba(139,92,246,0.4)!important;transform:translateY(-1px)}
 
-        <!-- ---- LEFT SIDEBAR: DFA Input ---- -->
-        <aside class="panel input-panel" id="inputPanel">
-            <div class="panel-header">
-                <h2>Define DFA</h2>
-                <button class="btn btn-icon" id="toggleInputBtn" title="Collapse panel">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-                </button>
-            </div>
+/* Hero Content */
+.hero-inner{
+  position:relative;z-index:2;text-align:center;max-width:760px;padding:0 24px;
+  animation:fadeUp .9s cubic-bezier(.4,0,.2,1) both;
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:none}}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:6px;padding:6px 18px;
+  border-radius:99px;background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.2);
+  color:var(--purple);font-size:0.78rem;font-weight:700;margin-bottom:28px;
+  animation:fadeUp .9s .15s both;
+}
+.hero-h1{
+  font-size:clamp(2.4rem,6vw,4.2rem);font-weight:900;letter-spacing:-0.04em;
+  line-height:1.1;margin-bottom:8px;animation:fadeUp .9s .25s both;
+}
+.hero-h1 span{
+  display:block;background:var(--purple-g);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  font-size:clamp(2.8rem,7vw,5rem);margin-top:4px;
+}
+.hero-p{
+  font-size:clamp(.95rem,1.6vw,1.12rem);color:var(--text-2);
+  max-width:540px;margin:0 auto 36px;line-height:1.75;font-weight:400;
+  animation:fadeUp .9s .35s both;
+}
+.hero-btns{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;animation:fadeUp .9s .45s both}
+.btn-hero{
+  display:inline-flex;align-items:center;gap:8px;padding:14px 32px;border-radius:99px;
+  text-decoration:none;font-weight:700;font-size:.95rem;border:none;cursor:pointer;
+  transition:all .25s cubic-bezier(.4,0,.2,1);
+}
+.btn-hero.primary{
+  background:var(--purple-g);color:#fff;
+  box-shadow:0 4px 28px rgba(139,92,246,0.3);
+}
+.btn-hero.primary:hover{box-shadow:0 8px 40px rgba(139,92,246,0.45);transform:translateY(-2px)}
+.btn-hero.secondary{
+  background:rgba(255,255,255,0.06);color:var(--text-2);
+  border:1px solid rgba(255,255,255,0.08);
+}
+.btn-hero.secondary:hover{background:rgba(255,255,255,0.1);color:var(--text-1)}
+.hero-pills{
+  display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:48px;
+  animation:fadeUp .9s .55s both;
+}
+.pill{
+  display:flex;align-items:center;gap:7px;padding:8px 16px;
+  border-radius:99px;background:rgba(255,255,255,0.04);
+  border:1px solid rgba(255,255,255,0.06);
+  font-size:.8rem;font-weight:600;color:var(--text-2);
+  transition:all .2s;
+}
+.pill:hover{background:rgba(255,255,255,0.08);transform:translateY(-2px);border-color:rgba(255,255,255,0.12)}
+.scroll-hint{
+  position:absolute;bottom:32px;left:50%;transform:translateX(-50%);
+  color:var(--text-3);font-size:.72rem;display:flex;flex-direction:column;align-items:center;gap:4px;
+  animation:hintBounce 2.5s ease-in-out infinite;
+}
+@keyframes hintBounce{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(-8px)}}
 
-            <!-- Sample Selector -->
-            <div class="form-group">
-                <label for="sampleSelect">Load Example</label>
-                <select id="sampleSelect" class="form-select">
-                    <option value="">— Choose a sample —</option>
-                </select>
-            </div>
+/* ═══════════════════════════════════════
+   APP SECTION
+   ═══════════════════════════════════════ */
+#app{max-width:1460px;margin:0 auto;padding:80px 20px 60px}
+.sec-header{text-align:center;margin-bottom:48px}
+.sec-badge{
+  display:inline-block;padding:5px 14px;border-radius:99px;
+  background:rgba(139,92,246,0.1);color:var(--purple);
+  font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;margin-bottom:14px;
+}
+.sec-title{font-size:clamp(1.5rem,3vw,2.1rem);font-weight:900;letter-spacing:-0.03em;margin-bottom:8px}
+.sec-desc{color:var(--text-2);font-size:.92rem;max-width:500px;margin:0 auto}
 
-            <div class="divider"><span>or define manually</span></div>
+/* Layout */
+.app-grid{display:flex;gap:20px;align-items:flex-start}
+.sidebar{width:350px;flex-shrink:0;position:sticky;top:76px;max-height:calc(100vh - 96px);overflow-y:auto}
+.main{flex:1;min-width:0;display:flex;flex-direction:column;gap:20px}
 
-            <!-- States -->
-            <div class="form-group">
-                <label for="statesInput">States <span class="hint">(comma-separated)</span></label>
-                <input type="text" id="statesInput" class="form-input" placeholder="q0, q1, q2, q3" autocomplete="off">
-            </div>
+/* Glass Card */
+.glass{
+  background:var(--card);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  border:1px solid var(--card-border);border-radius:var(--r3);
+  padding:24px;box-shadow:0 8px 32px rgba(0,0,0,0.35),0 0 48px rgba(139,92,246,0.04);
+  animation:cardUp .5s cubic-bezier(.4,0,.2,1) both;
+}
+@keyframes cardUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
 
-            <!-- Alphabet -->
-            <div class="form-group">
-                <label for="alphabetInput">Alphabet <span class="hint">(comma-separated)</span></label>
-                <input type="text" id="alphabetInput" class="form-input" placeholder="a, b" autocomplete="off">
-            </div>
+.glass-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;gap:12px}
+.glass-title{display:flex;align-items:center;gap:10px}
+.glass-title h3{font-size:.92rem;font-weight:700}
+.icon-box{
+  width:36px;height:36px;border-radius:var(--r);display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.icon-purple{background:rgba(139,92,246,0.1);color:var(--purple)}
+.icon-blue{background:rgba(59,130,246,0.1);color:var(--blue)}
+.icon-amber{background:rgba(245,158,11,0.1);color:var(--amber)}
+.icon-green{background:rgba(16,185,129,0.1);color:var(--green)}
 
-            <!-- Start State -->
-            <div class="form-group">
-                <label for="startStateSelect">Start State</label>
-                <select id="startStateSelect" class="form-select">
-                    <option value="">—</option>
-                </select>
-            </div>
+/* Forms */
+.fg{margin-bottom:14px}
+.fg label{
+  display:flex;align-items:center;gap:5px;font-size:.74rem;font-weight:700;
+  color:var(--text-2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em;
+}
+.fg .hint{font-weight:400;color:var(--text-3);text-transform:none;letter-spacing:0;font-size:.72rem}
+.fg-row{display:flex;gap:10px}
+.fg-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+.finput,.fselect{
+  width:100%;padding:10px 13px;background:var(--input-bg);color:var(--text-1);
+  border:1px solid var(--card-border);border-radius:8px;
+  font-family:'JetBrains Mono',monospace;font-size:.84rem;outline:none;
+  transition:all .15s;
+}
+.finput:focus,.fselect:focus{border-color:rgba(139,92,246,0.45);box-shadow:0 0 0 3px rgba(139,92,246,0.08);background:var(--input-hover)}
+.finput::placeholder{color:var(--text-3)}
+.fselect{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235c5c72' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
+.fselect option{background:#12121e;color:var(--text-1)}
+.divider{display:flex;align-items:center;gap:12px;margin:18px 0;color:var(--text-3);font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--card-border)}
 
-            <!-- Accept States -->
-            <div class="form-group">
-                <label for="acceptStatesInput">Accept States <span class="hint">(comma-separated)</span></label>
-                <input type="text" id="acceptStatesInput" class="form-input" placeholder="q2, q4" autocomplete="off">
-            </div>
+/* Transition table */
+.tt-wrap{max-height:240px;overflow:auto;border-radius:8px;border:1px solid var(--card-border)}
+.tt-wrap table{width:100%;border-collapse:collapse;font-size:.82rem}
+.tt-wrap th{background:rgba(139,92,246,0.06);color:var(--text-2);padding:8px;text-align:center;font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;z-index:2;border-bottom:1px solid rgba(139,92,246,0.12)}
+.tt-wrap td{padding:4px;text-align:center;border-bottom:1px solid var(--card-border)}
+.tt-wrap td:first-child{font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--cyan);padding:8px;text-align:left}
+.csel{width:100%;padding:5px;background:var(--input-bg);color:var(--text-1);border:1px solid transparent;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:.82rem;appearance:none;text-align:center;cursor:pointer;outline:none;transition:border .15s}
+.csel:focus{border-color:rgba(139,92,246,0.4)}
 
-            <!-- Transition Table -->
-            <div class="form-group">
-                <div class="form-group-header">
-                    <label>Transition Function</label>
-                    <button class="btn btn-sm btn-ghost" id="generateTableBtn">Generate Table</button>
-                </div>
-                <div class="transition-table-wrap" id="transitionTableWrap">
-                    <p class="placeholder-text">Enter states &amp; alphabet, then click <em>Generate Table</em>.</p>
-                </div>
-            </div>
+/* Buttons */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  padding:10px 20px;border:none;border-radius:var(--r);
+  font-family:inherit;font-size:.85rem;font-weight:700;cursor:pointer;
+  white-space:nowrap;outline:none;transition:all .2s;
+}
+.btn:disabled{opacity:.3;cursor:not-allowed;transform:none!important}
+.btn-p{background:var(--purple-g);color:#fff;box-shadow:0 2px 16px rgba(139,92,246,0.2)}
+.btn-p:hover:not(:disabled){box-shadow:0 6px 28px rgba(139,92,246,0.4);transform:translateY(-1px)}
+.btn-g{background:linear-gradient(135deg,#10b981,#06b6d4);color:#fff;box-shadow:0 2px 12px rgba(16,185,129,0.2)}
+.btn-g:hover:not(:disabled){box-shadow:0 6px 24px rgba(16,185,129,0.35);transform:translateY(-1px)}
+.btn-ghost{background:transparent;color:var(--text-2);border:1px solid var(--card-border)}
+.btn-ghost:hover:not(:disabled){background:var(--card-hover);color:var(--text-1)}
+.btn-sm{padding:5px 12px;font-size:.74rem;border-radius:6px}
+.btn-text{background:none;border:none;color:var(--text-3);font-size:.78rem;font-weight:500;cursor:pointer;padding:6px 0;display:inline-flex;align-items:center;gap:5px;transition:color .15s}
+.btn-text:hover{color:var(--red)}
+.btn-outline{background:transparent;color:var(--text-2);border:1px solid var(--card-border);border-radius:var(--r)}
+.btn-outline:hover:not(:disabled){background:rgba(139,92,246,0.06);color:var(--purple);border-color:rgba(139,92,246,0.25)}
+.act-row{display:flex;gap:10px;margin-top:20px}
+.act-row .btn{flex:1}
+.empty{padding:20px;text-align:center;color:var(--text-3);font-size:.82rem}
+.empty strong{color:var(--text-2)}
 
-            <!-- Action Buttons -->
-            <div class="action-buttons">
-                <button class="btn btn-primary" id="visualizeBtn" disabled>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
-                    Visualize
-                </button>
-                <button class="btn btn-accent" id="minimizeBtn" disabled>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
-                    Minimize
-                </button>
-                <button class="btn btn-ghost" id="resetBtn">Reset</button>
-            </div>
+/* Error */
+.err{margin-top:12px;padding:10px 14px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:8px;color:var(--red);font-size:.82rem;display:none}
+.err.show{display:block;animation:shake .35s}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
 
-            <!-- Error message area -->
-            <div class="error-message" id="errorMessage"></div>
-        </aside>
-
-        <!-- ---- MAIN CONTENT ---- -->
-        <div class="main-content">
-
-            <!-- Visualization Panel -->
-            <section class="panel viz-panel" id="vizPanel">
-                <div class="panel-header">
-                    <h2 id="vizTitle">DFA Visualization</h2>
-                    <div class="viz-tabs" id="vizTabs">
-                        <button class="tab active" data-tab="original" id="tabOriginal">Original DFA</button>
-                        <button class="tab" data-tab="minimized" id="tabMinimized" disabled>Minimized DFA</button>
-                    </div>
-                </div>
-                <div class="viz-container" id="vizContainer">
-                    <div class="graph-area active" id="originalGraphArea">
-                        <svg id="originalSvg"></svg>
-                        <div class="graph-placeholder" id="originalPlaceholder">
-                            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3"><circle cx="5" cy="12" r="3"/><circle cx="19" cy="6" r="3"/><circle cx="19" cy="18" r="3"/><line x1="8" y1="11" x2="16" y2="7"/><line x1="8" y1="13" x2="16" y2="17"/></svg>
-                            <p>Define a DFA and click <strong>Visualize</strong> to see the state diagram.</p>
-                        </div>
-                    </div>
-                    <div class="graph-area" id="minimizedGraphArea">
-                        <svg id="minimizedSvg"></svg>
-                    </div>
-                </div>
-                <!-- Partition Legend -->
-                <div class="partition-legend" id="partitionLegend"></div>
-            </section>
-
-            <!-- Steps Panel -->
-            <section class="panel steps-panel hidden" id="stepsPanel">
-                <div class="panel-header">
-                    <h2>Minimization Steps</h2>
-                    <span class="step-counter" id="stepCounter">Step 0 / 0</span>
-                </div>
-
-                <!-- Step Controls -->
-                <div class="step-controls">
-                    <div class="step-buttons">
-                        <button class="btn btn-control" id="stepFirst" title="First step">⏮</button>
-                        <button class="btn btn-control" id="stepPrev" title="Previous step">⏪</button>
-                        <button class="btn btn-control btn-play" id="stepPlay" title="Play / Pause">▶</button>
-                        <button class="btn btn-control" id="stepNext" title="Next step">⏩</button>
-                        <button class="btn btn-control" id="stepLast" title="Last step">⏭</button>
-                    </div>
-                    <div class="speed-control">
-                        <label for="speedSlider">Speed</label>
-                        <input type="range" id="speedSlider" min="1" max="5" value="3" step="1">
-                        <span class="speed-value" id="speedValue">3×</span>
-                    </div>
-                </div>
-
-                <!-- Step Progress Bar -->
-                <div class="step-progress">
-                    <div class="step-progress-bar" id="stepProgressBar" style="width:0%"></div>
-                </div>
-
-                <!-- Step Explanation -->
-                <div class="step-explanation" id="stepExplanation">
-                    <div class="step-type-badge" id="stepTypeBadge"></div>
-                    <p id="stepExplanationText"></p>
-                </div>
-
-                <!-- Partition Display -->
-                <div class="partition-display" id="partitionDisplay"></div>
-
-                <!-- Detailed Step Info (split reasons) -->
-                <div class="step-details" id="stepDetails"></div>
-            </section>
-
-            <!-- Results Panel -->
-            <section class="panel results-panel hidden" id="resultsPanel">
-                <div class="panel-header">
-                    <h2>Minimization Result</h2>
-                </div>
-
-                <!-- Stats -->
-                <div class="result-stats" id="resultStats">
-                    <div class="stat-card">
-                        <span class="stat-value" id="originalStateCount">0</span>
-                        <span class="stat-label">Original States</span>
-                    </div>
-                    <div class="stat-arrow">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-                    </div>
-                    <div class="stat-card highlight">
-                        <span class="stat-value" id="minimizedStateCount">0</span>
-                        <span class="stat-label">Minimized States</span>
-                    </div>
-                    <div class="stat-card saved">
-                        <span class="stat-value" id="statesReduced">0</span>
-                        <span class="stat-label">States Saved</span>
-                    </div>
-                </div>
-
-                <!-- Two-column results -->
-                <div class="results-grid">
-                    <div class="result-card">
-                        <h3>State Mapping</h3>
-                        <div class="table-wrap" id="stateMappingWrap"></div>
-                    </div>
-                    <div class="result-card">
-                        <h3>Minimized Transition Table</h3>
-                        <div class="table-wrap" id="minimizedTableWrap"></div>
-                    </div>
-                </div>
-
-                <!-- Export Buttons -->
-                <div class="export-buttons">
-                    <button class="btn btn-outline" id="exportJsonBtn">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                        Export JSON
-                    </button>
-                    <button class="btn btn-outline" id="exportPngBtn">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                        Export PNG
-                    </button>
-                </div>
-            </section>
-        </div>
-    </main>
-
-    <!-- ===== SCRIPTS ===== -->
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <script src="js/samples.js"></script>
-    <script src="js/dfa.js"></script>
-    <script src="js/visualizer.js"></script>
-    <script src="js/app.js"></script>
-</body>
-</html>
+/* ═══════════════════════════════════════
+   VIZ CARD
+   ═══════════════════════════════════════ */
+.viz-card{display:flex;flex-direction:column;min-height:440px}
+.tabs{display:flex;gap:3px;padding:3px;background:rgba(255,255,255,0.03);border-radius:8px}
